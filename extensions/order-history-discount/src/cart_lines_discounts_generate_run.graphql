@@ -1,0 +1,15 @@
+query CartInput {
+  cart {
+    buyerIdentity {
+      customer {
+        numberOfOrders
+      }
+    }
+  }
+  discount {
+    discountClasses
+    metafield(namespace: "$app:loyalty-discount", key: "function-configuration") {
+      jsonValue
+    }
+  }
+}
