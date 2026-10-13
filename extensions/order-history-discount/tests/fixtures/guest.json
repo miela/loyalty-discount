@@ -4,10 +4,11 @@
     "target": "cart.lines.discounts.generate.run",
     "input": {
       "cart": {
-        "lines": []
+        "buyerIdentity": null
       },
       "discount": {
-        "discountClasses": ["ORDER", "PRODUCT"]
+        "discountClasses": ["ORDER"],
+        "metafield": null
       }
     },
     "output": {
