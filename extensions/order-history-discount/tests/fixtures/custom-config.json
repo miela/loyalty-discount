@@ -1,0 +1,38 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "cart": {
+        "buyerIdentity": {
+          "customer": {
+            "numberOfOrders": 1
+          }
+        }
+      },
+      "discount": {
+        "discountClasses": ["ORDER"],
+        "metafield": {
+            "jsonValue": {
+            "label": "VIP",
+            "rules": [{ "minOrders": 1, "percentage": 5 }]
+            }
+        }
+        }
+    },
+    "output": {
+    "operations":  [ {
+        "orderDiscountsAdd": {
+            "candidates": [
+              {
+                "message": "VIP",
+                "targets": [{ "orderSubtotal": { "excludedCartLineIds": [] } }],
+                "value": { "percentage": { "value": 5 } }
+              }
+            ],
+            "selectionStrategy": "FIRST"
+          }
+        }]
+    }
+  }
+}

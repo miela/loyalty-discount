@@ -1,0 +1,40 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "cart": {
+        "buyerIdentity": {
+          "customer": {
+            "numberOfOrders": 2
+          }
+        }
+      },
+      "discount": {
+        "discountClasses": ["ORDER"],
+        "metafield": {
+            "jsonValue": {
+                "label": "Broken",
+                "rules": [{ "minOrders": 2, "percentage": 500 }]
+            }
+        }
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "orderDiscountsAdd": {
+            "candidates": [
+              {
+                "message": "Loyal Customer Discount",
+                "targets": [{ "orderSubtotal": { "excludedCartLineIds": [] } }],
+                "value": { "percentage": { "value": 13 } }
+              }
+            ],
+            "selectionStrategy": "FIRST"
+          }
+        }
+      ]
+    }
+  }
+}
