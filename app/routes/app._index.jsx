@@ -63,11 +63,84 @@ export const headers = (headersArgs) => {
 
 export default function Index() {
   const { discount, config } = useLoaderData();
+  const fetcher = useFetcher();
+  const shopify = useAppBridge();
+  const [tier1 = {}, tier2 = {}] = config.rules ?? [];
+  const errors = fetcher.data?.errors ?? [];
+  const isSaving = fetcher.state !== "idle";
+
+  useEffect(() => {
+    if (fetcher.data?.ok) shopify.toast.show("Settings saved");
+  }, [fetcher.data, shopify]);
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    fetcher.submit(new FormData(event.currentTarget), { method: "post" });
+  };
+
   return (
     <s-page heading="Loyalty discount">
-      <s-section>
-        <pre>{JSON.stringify({ discount, config }, null, 2)}</pre>
-      </s-section>
+      <form data-save-bar onSubmit={handleSubmit}>
+        <s-stack gap="base">
+        <s-section heading="Status">
+          {discount ? (
+            <s-paragraph>
+              {discount.title}: <s-badge>{discount.status}</s-badge>
+            </s-paragraph>
+          ) : (
+            <s-banner tone="info">
+              The discount doesn't exist yet. Saving this form will create it.
+            </s-banner>
+          )}
+        </s-section>
+
+        {errors.length > 0 && (
+          <s-banner tone="critical" heading="Settings not saved">
+            <s-unordered-list>
+              {errors.map((error) => (
+                <s-list-item key={error}>{error}</s-list-item>
+              ))}
+            </s-unordered-list>
+          </s-banner>
+        )}
+
+        <s-section heading="Checkout label">
+          <s-text-field
+            label="Label shown in checkout"
+            name="label"
+            defaultValue={config.label}
+          />
+        </s-section>
+
+        <s-section heading="Tier 1">
+          <s-grid gridTemplateColumns="1fr 1fr 1fr" gap="base">
+            <s-number-field label="From (previous orders)" name="tier1Min" min={0} defaultValue={String(tier1.minOrders ?? "")} />
+            <s-number-field label="To (previous orders)" name="tier1Max" min={0} defaultValue={String(tier1.maxOrders ?? "")} />
+            <s-number-field label="Discount" name="tier1Percentage" suffix="%" min={1} max={100} defaultValue={String(tier1.percentage ?? "")} />
+          </s-grid>
+        </s-section>
+
+        <s-section heading="Tier 2">
+          <s-grid gridTemplateColumns="1fr 1fr 1fr" gap="base">
+            <s-number-field label="From (previous orders)" name="tier2Min" min={0} defaultValue={String(tier2.minOrders ?? "")} />
+            <s-number-field
+              label="To (previous orders)"
+              name="tier2Max"
+              min={0}
+              details="Leave empty for no upper limit"
+            defaultValue={String(tier2.maxOrders ?? "")}
+          />
+          <s-number-field label="Discount" name="tier2Percentage" suffix="%" min={1} max={100} defaultValue={String(tier2.percentage ?? "")} />
+          </s-grid>
+        </s-section>
+
+        <s-section>
+          <s-button type="submit" variant="primary" {...(isSaving ? { loading: true } : {})}>
+            {discount ? "Save" : "Create discount"}
+          </s-button>
+        </s-section>
+        </s-stack>
+      </form>
     </s-page>
   );
 }
