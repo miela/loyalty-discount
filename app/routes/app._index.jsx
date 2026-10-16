@@ -25,13 +25,13 @@ export const loader = async ({ request }) => {
       shopifyFunctions(first: 25) {
         nodes { id handle }
       }
-      automaticDiscountNodes(first: 50) {
+      discountNodes(first: 50) {
         nodes {
           id
           config: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "${METAFIELD_KEY}") {
             jsonValue
           }
-          automaticDiscount {
+          discount {
             ... on DiscountAutomaticApp {
               title
               status
@@ -45,13 +45,13 @@ export const loader = async ({ request }) => {
   const { data } = await response.json();
 
   const fn = data.shopifyFunctions.nodes.find((f) => f.handle === FUNCTION_HANDLE);
-  const node = data.automaticDiscountNodes.nodes.find(
-    (n) => n.automaticDiscount.appDiscountType?.functionId === fn?.id,
+  const node = data.discountNodes.nodes.find(
+    (n) => n.discount.appDiscountType?.functionId === fn?.id,
   );
 
   return {
     discount: node
-      ? { id: node.id, title: node.automaticDiscount.title, status: node.automaticDiscount.status }
+      ? { id: node.id, title: node.discount.title, status: node.discount.status }
       : null,
     config: node?.config?.jsonValue ?? DEFAULT_CONFIG,
   };
