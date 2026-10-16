@@ -1,237 +1,189 @@
-# Shopify App Template - React Router
+# Shopify Customer Loyalty Discount
 
-This is a template for building a [Shopify app](https://shopify.dev/docs/apps/getting-started) using [React Router](https://reactrouter.com/). It was forked from the [Shopify Remix app template](https://github.com/Shopify/shopify-app-template-remix) and converted to React Router.
+## Description
+Shopify app with Shopify Functions gives order discount based on logged-in customer's order history. There is ability to set 2 tiers.
 
-Rather than cloning this repo, follow the [Quick Start steps](https://github.com/Shopify/shopify-app-template-react-router#quick-start).
+Default tiers:
+- 2 orders - 13% discount
+- 4 or more orders - 50% discount
 
-Visit the [`shopify.dev` documentation](https://shopify.dev/docs/api/shopify-app-react-router) for more details on the React Router app package.
+As was written in task description I intentionally set that customer with exactly 3 orders gets no discount.
 
-## Upgrading from Remix
+Anyway, it could be changed in app dashboard - amount of orders and discount.
 
-If you have an existing Remix app that you want to upgrade to React Router, please follow the [upgrade guide](https://github.com/Shopify/shopify-app-template-react-router/wiki/Upgrading-from-Remix). Otherwise, please follow the quick start guide below.
 
-## Quick start
+## Architecture
 
-### Prerequisites
+1. App uses function `order-history-discount` in JS, target `cart.lines.discounts.generate.run`, compiled to WASM.
 
-Before you begin, you'll need to [download and install the Shopify CLI](https://shopify.dev/docs/apps/tools/cli/getting-started) if you haven't already.
+2. App dashboard built with React Router and Polaris. It allows to set tiers and discount label. Data are stored in metafield.
 
-### Setup
+3. Function reads metafield in input query. If it doesn't exist, function uses default values from task description.
 
-```shell
-shopify app init --template=https://github.com/Shopify/shopify-app-template-react-router
-```
+4. This solution allows store owner to easily change tiers of discount without redeploying the app.
 
-### Local Development
+## API Scopes
 
-```shell
-shopify app dev
-```
+1. App uses only `write_discounts` scope. It's required for the backend to create the discount (`discountAutomaticAppCreate`) and save in metafield (`metafieldsSet`).
+2. Function doesn't need any scope because it gets data from Shopify via input query.
+3. `read_orders` is not necessary because `numberOfOrders` is ready in `cart.buyerIdentity.customer`, as well as `read_customers`.
+4. Instead of scope app needs access to protected customer data in app settings. Without it `buyerIdentity.customer` always shows `null`.
+5. Webhooks from the template (app/uninstalled, app/scopes_update) don't need scope.
 
-Press P to open the URL to your app. Once you click install, you can start development.
+## GraphQL and mutations
 
-Local development is powered by [the Shopify CLI](https://shopify.dev/docs/apps/tools/cli). It logs into your account, connects to an app, provides environment variables, updates remote config, creates a tunnel and provides commands to generate extensions.
+### Function input query
 
-### Authenticating and querying data
+File: `extensions/order-history-discount/src/cart_lines_discounts_generate_run.graphql`
 
-To authenticate and query data you can use the `shopify` const that is exported from `/app/shopify.server.js`:
+The task mentions `input.graphql`, but new Shopify CLI names the query file after the function target, so in this repo it's `cart_lines_discounts_generate_run.graphql`.
 
-```js
-export async function loader({ request }) {
-  const { admin } = await shopify.authenticate.admin(request);
-
-  const response = await admin.graphql(`
-    {
-      products(first: 25) {
-        nodes {
-          title
-          description
-        }
+```graphql
+query CartInput {
+  cart {
+    buyerIdentity {
+      customer {
+        numberOfOrders
       }
-    }`);
-
-  const {
-    data: {
-      products: { nodes },
-    },
-  } = await response.json();
-
-  return nodes;
+    }
+  }
+  discount {
+    discountClasses
+    metafield(namespace: "$app:loyalty-discount", key: "function-configuration") {
+      jsonValue
+    }
+  }
 }
 ```
 
-This template comes pre-configured with examples of:
+- `cart.buyerIdentity.customer.numberOfOrders` – number of past orders, for not logged customers `buyerIdentity` and `customer` return `null`. So this checks eligibility for discount (number of orders and if customer is logged in)
+- `discount.discountClasses` – function returns discount only if discount has class `ORDER`
+- `discount.metafield(...).jsonValue` – getting configuration from dashboard
 
-1. Setting up your Shopify app in [/app/shopify.server.ts](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/shopify.server.ts)
-2. Querying data using Graphql. Please see: [/app/routes/app.\_index.tsx](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/routes/app._index.tsx).
-3. Responding to webhooks. Please see [/app/routes/webhooks.tsx](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/routes/webhooks.app.uninstalled.tsx).
-4. Using metafields, metaobjects, and declarative custom data definitions. Please see [/app/routes/app.\_index.tsx](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/routes/app._index.tsx) and [shopify.app.toml](https://github.com/Shopify/shopify-app-template-react-router/blob/main/shopify.app.toml).
+`cart.lines` are not in the query on purpose. Percentage discount on `orderSubtotal` is calculated by Shopify, so function doesn't need line prices.
 
-Please read the [documentation for @shopify/shopify-app-react-router](https://shopify.dev/docs/api/shopify-app-react-router) to see what other API's are available.
+### Admin API query (dashboard)
 
-## Shopify Dev MCP
+File: `app/routes/app._index.jsx`. Used by the dashboard to find the discount and read its current config.
 
-This template is configured with the Shopify Dev MCP. This instructs [Cursor](https://cursor.com/), [GitHub Copilot](https://github.com/features/copilot) and [Claude Code](https://claude.com/product/claude-code) and [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) to use the Shopify Dev MCP.
-
-For more information on the Shopify Dev MCP please read [the documentation](https://shopify.dev/docs/apps/build/devmcp).
-
-## Deployment
-
-### Application Storage
-
-This template uses [Prisma](https://www.prisma.io/) to store session data, by default using an [SQLite](https://www.sqlite.org/index.html) database.
-The database is defined as a Prisma schema in `prisma/schema.prisma`.
-
-This use of SQLite works in production if your app runs as a single instance.
-The database that works best for you depends on the data your app needs and how it is queried.
-Here’s a short list of databases providers that provide a free tier to get started:
-
-| Database   | Type             | Hosters                                                                                                                                                                                                                                    |
-| ---------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| MySQL      | SQL              | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-mysql), [Planet Scale](https://planetscale.com/), [Amazon Aurora](https://aws.amazon.com/rds/aurora/), [Google Cloud SQL](https://cloud.google.com/sql/docs/mysql) |
-| PostgreSQL | SQL              | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-postgresql), [Amazon Aurora](https://aws.amazon.com/rds/aurora/), [Google Cloud SQL](https://cloud.google.com/sql/docs/postgres)                                   |
-| Redis      | Key-value        | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-redis), [Amazon MemoryDB](https://aws.amazon.com/memorydb/)                                                                                                        |
-| MongoDB    | NoSQL / Document | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-mongodb), [MongoDB Atlas](https://www.mongodb.com/atlas/database)                                                                                                  |
-
-To use one of these, you can use a different [datasource provider](https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#datasource) in your `schema.prisma` file, or a different [SessionStorage adapter package](https://github.com/Shopify/shopify-api-js/blob/main/packages/shopify-api/docs/guides/session-storage.md).
-
-### Build
-
-Build the app by running the command below with the package manager of your choice:
-
-Using yarn:
-
-```shell
-yarn build
+```graphql
+query LoyaltyDiscount {
+  shopifyFunctions(first: 25) {
+    nodes { id handle }
+  }
+  discountNodes(first: 50) {
+    nodes {
+      id
+      config: metafield(namespace: "$app:loyalty-discount", key: "function-configuration") {
+        jsonValue
+      }
+      discount {
+        ... on DiscountAutomaticApp {
+          title
+          status
+          appDiscountType { functionId }
+        }
+      }
+    }
+  }
+}
 ```
 
-Using npm:
+- `shopifyFunctions` - finds function ID by handle
+- `discountNodes` - gets discount bound with function and reads metafield
+- I used `discountNodes` instead of `automaticDiscountNodes` because only the first one returns discounts from functions
 
-```shell
-npm run build
+### Mutations
+- `discountAutomaticAppCreate` - creates discount with metafield if it doesn't exist
+- `metafieldsSet` - saves discount data
+
+### Metafield
+- namespace `$app:loyalty-discount`, key `function-configuration`, type `json`, owner: discount
+- Metafield belongs to our app (`$app:`): other apps don't have access to it
+
+Default configuration looks as below:
+```js
+const DEFAULT_CONFIG = {
+  label: 'Loyal Customer Discount',
+  rules: [
+    { minOrders: 2, maxOrders: 2, percentage: 13 },
+    { minOrders: 4, percentage: 50 },
+  ],
+};
 ```
 
-Using pnpm:
+Function validates it and if it gets error, uses `DEFAULT_CONFIG`.
 
-```shell
-pnpm run build
+## App Bridge
+The app dashboard is embedded in Shopify admin, navigation by `s-app-nav`. I use `shopify.toast.show()` after successful save. The form has `data-save-bar`, so Shopify shows Save/Discard bar when something in the form is changed.
+
+## Validation
+
+Function checks every rule from the metafield:
+- `minOrders` - whole number, 0 or more
+- `maxOrders` - empty or not lower than `minOrders`
+- `percentage` - more than 0 and max 100
+
+If one rule is wrong, the whole config is ignored and `DEFAULT_CONFIG` is used. I didn't want to apply only half of merchant's settings. Empty label means default label.
+
+Dashboard checks the same before saving and also that Tier 1 ends before Tier 2 starts.
+
+## Tests
+
+```bash
+cd extensions/order-history-discount
+npx vitest run
 ```
 
-## Hosting
+Tests are fixtures in `tests/fixtures`. Every file has function input and expected output. Test runner validates the fixture against the input query and runs the compiled function.
 
-When you're ready to set up your app in production, you can follow [our deployment documentation](https://shopify.dev/docs/apps/launch/deployment) to host it externally. From there, you have a few options:
+| Fixture | Case | Expected |
+|---|---|---|
+| `guest.json` | guest, no customer | no discount |
+| `one-previous-order.json` | 1 order | no discount |
+| `two-previous-orders.json` | 2 orders | 13% |
+| `three-previous-orders.json` | 3 orders | no discount |
+| `four-previous-orders.json` | 4 orders | 50% |
+| `many-previous-orders.json` | 12 orders | 50% |
+| `no-orders-class.json` | 2 orders, discount without `ORDER` class | no discount |
+| `custom-config.json` | config from metafield, 1 order | 5%, label "VIP" |
+| `invalid-config-falls-back.json` | broken config (500%), 2 orders | 13%, default label |
 
-- [Google Cloud Run](https://shopify.dev/docs/apps/launch/deployment/deploy-to-google-cloud-run): This tutorial is written specifically for this example repo, and is compatible with the extended steps included in the subsequent [**Build your app**](tutorial) in the **Getting started** docs. It is the most detailed tutorial for taking a React Router-based Shopify app and deploying it to production. It includes configuring permissions and secrets, setting up a production database, and even hosting your apps behind a load balancer across multiple regions.
-- [Fly.io](https://fly.io/docs/js/shopify/): Leverages the Fly.io CLI to quickly launch Shopify apps to a single machine.
-- [Render](https://render.com/docs/deploy-shopify-app): This tutorial guides you through using Docker to deploy and install apps on a Dev store.
-- [Manual deployment guide](https://shopify.dev/docs/apps/launch/deployment/deploy-to-hosting-service): This resource provides general guidance on the requirements of deployment including environment variables, secrets, and persistent data.
+## Installation
 
-When you reach the step for [setting up environment variables](https://shopify.dev/docs/apps/deployment/web#set-env-vars), you also need to set the variable `NODE_ENV=production`.
+Requirements: Node.js 20.19+ or 22.12+, Shopify CLI, Shopify Partners account and development store.
 
-## Gotchas / Troubleshooting
-
-### Database tables don't exist
-
-If you get an error like:
-
-```
-The table `main.Session` does not exist in the current database.
-```
-
-Create the database for Prisma. Run the `setup` script in `package.json` using `npm`, `yarn` or `pnpm`.
-
-### Navigating/redirecting breaks an embedded app
-
-Embedded apps must maintain the user session, which can be tricky inside an iFrame. To avoid issues:
-
-1. Use `Link` from `react-router` or `@shopify/polaris`. Do not use `<a>`.
-2. Use `redirect` returned from `authenticate.admin`. Do not use `redirect` from `react-router`
-3. Use `useSubmit` from `react-router`.
-
-This only applies if your app is embedded, which it will be by default.
-
-### Webhooks: shop-specific webhook subscriptions aren't updated
-
-If you are registering webhooks in the `afterAuth` hook, using `shopify.registerWebhooks`, you may find that your subscriptions aren't being updated.
-
-Instead of using the `afterAuth` hook declare app-specific webhooks in the `shopify.app.toml` file. This approach is easier since Shopify will automatically sync changes every time you run `deploy` (e.g: `npm run deploy`). Please read these guides to understand more:
-
-1. [app-specific vs shop-specific webhooks](https://shopify.dev/docs/apps/build/webhooks/subscribe#app-specific-subscriptions)
-2. [Create a subscription tutorial](https://shopify.dev/docs/apps/build/webhooks/subscribe/get-started?deliveryMethod=https)
-
-If you do need shop-specific webhooks, keep in mind that the package calls `afterAuth` in 2 scenarios:
-
-- After installing the app
-- When an access token expires
-
-During normal development, the app won't need to re-authenticate most of the time, so shop-specific subscriptions aren't updated. To force your app to update the subscriptions, uninstall and reinstall the app. Revisiting the app will call the `afterAuth` hook.
-
-### Webhooks: Admin created webhook failing HMAC validation
-
-Webhooks subscriptions created in the [Shopify admin](https://help.shopify.com/en/manual/orders/notifications/webhooks) will fail HMAC validation. This is because the webhook payload is not signed with your app's secret key.
-
-The recommended solution is to use [app-specific webhooks](https://shopify.dev/docs/apps/build/webhooks/subscribe#app-specific-subscriptions) defined in your toml file instead. Test your webhooks by triggering events manually in the Shopify admin(e.g. Updating the product title to trigger a `PRODUCTS_UPDATE`).
-
-### Webhooks: Admin object undefined on webhook events triggered by the CLI
-
-When you trigger a webhook event using the Shopify CLI, the `admin` object will be `undefined`. This is because the CLI triggers an event with a valid, but non-existent, shop. The `admin` object is only available when the webhook is triggered by a shop that has installed the app. This is expected.
-
-Webhooks triggered by the CLI are intended for initial experimentation testing of your webhook configuration. For more information on how to test your webhooks, see the [Shopify CLI documentation](https://shopify.dev/docs/apps/tools/cli/commands#webhook-trigger).
-
-### Incorrect GraphQL Hints
-
-By default the [graphql.vscode-graphql](https://marketplace.visualstudio.com/items?itemName=GraphQL.vscode-graphql) extension for will assume that GraphQL queries or mutations are for the [Shopify Admin API](https://shopify.dev/docs/api/admin). This is a sensible default, but it may not be true if:
-
-1. You use another Shopify API such as the storefront API.
-2. You use a third party GraphQL API.
-
-If so, please update [.graphqlrc.ts](https://github.com/Shopify/shopify-app-template-react-router/blob/main/.graphqlrc.ts).
-
-### Using Defer & await for streaming responses
-
-By default the CLI uses a cloudflare tunnel. Unfortunately cloudflare tunnels wait for the Response stream to finish, then sends one chunk. This will not affect production.
-
-To test [streaming using await](https://reactrouter.com/api/components/Await#await) during local development we recommend [localhost based development](https://shopify.dev/docs/apps/build/cli-for-apps/networking-options#localhost-based-development).
-
-### "nbf" claim timestamp check failed
-
-This is because a JWT token is expired. If you are consistently getting this error, it could be that the clock on your machine is not in sync with the server. To fix this ensure you have enabled "Set time and date automatically" in the "Date and Time" settings on your computer.
-
-### Using MongoDB and Prisma
-
-If you choose to use MongoDB with Prisma, there are some gotchas in Prisma's MongoDB support to be aware of. Please see the [Prisma SessionStorage README](https://www.npmjs.com/package/@shopify/shopify-app-session-storage-prisma#mongodb).
-
-### Unable to require(`C:\...\query_engine-windows.dll.node`).
-
-Unable to require(`C:\...\query_engine-windows.dll.node`).
-The Prisma engines do not seem to be compatible with your system.
-
-query_engine-windows.dll.node is not a valid Win32 application.
-
-**Fix:** Set the environment variable:
-
-```shell
-PRISMA_CLIENT_ENGINE_TYPE=binary
+```bash
+git clone <repo-url>
+cd loyalty-discount
+npm install
+shopify app dev
 ```
 
-This forces Prisma to use the binary engine mode, which runs the query engine as a separate process and can work via emulation on Windows ARM64.
+1. Install the app on dev store using the link from terminal.
+2. In app settings turn on access to protected customer data. Without it function sees every customer as a guest.
+3. Open the app in Shopify admin and click "Create discount".
 
-## Resources
+### Testing on dev store
 
-React Router:
+Orders placed in checkout with test payment (Bogus Gateway) have `test: true` and are not counted in `numberOfOrders`. I found it when discount didn't show up for customer with 6 orders - Shopify counted 0. Test customers need orders created in admin: Orders → Create order → choose customer → Mark as paid.
 
-- [React Router docs](https://reactrouter.com/home)
+Customers I used for demo:
+- 2 orders → 13%
+- 3 orders → no discount
+- 4 orders → 50%
 
-Shopify:
+## Limitations / next steps
 
-- [Intro to Shopify apps](https://shopify.dev/docs/apps/getting-started)
-- [Shopify App React Router docs](https://shopify.dev/docs/api/shopify-app-react-router)
-- [Shopify CLI](https://shopify.dev/docs/apps/tools/cli)
-- [Shopify App Bridge](https://shopify.dev/docs/api/app-bridge-library).
-- [Polaris Web Components](https://shopify.dev/docs/api/app-home/polaris-web-components).
-- [App extensions](https://shopify.dev/docs/apps/app-extensions/list)
-- [Shopify Functions](https://shopify.dev/docs/api/functions)
+- `discountNodes(first: 50)` has no pagination. With many discounts it would be better to keep discount ID in database (Prisma is already in the project).
+- `DEFAULT_CONFIG` is duplicated in function and dashboard. Function is built separately to WASM and doesn't import app code.
+- Dashboard supports exactly 2 tiers, function can handle any number of rules.
+- `combinesWith` is hardcoded - discount combines only with shipping discounts.
+- During development `shopify app dev` kept showing "Error while polling app logs", so I couldn't see function logs. I debugged with tests and by checking data in Admin API.
 
-Internationalization:
+## Screenshots
 
-- [Internationalizing your app](https://shopify.dev/docs/apps/best-practices/internationalization/getting-started)
+![App dashboard](docs/screenshots/app-dashboard.png)
+![Checkout - 2 orders, 13%](docs/screenshots/checkout-13.png)
+![Checkout - 4 orders, 50%](docs/screenshots/checkout-50.png)
+![Apps > loyalty-discount > Extensions](docs/screenshots/extensions.png)
